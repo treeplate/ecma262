@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:math';
 
 import 'src/unicode.dart';
 
@@ -17,20 +17,116 @@ class NonToken extends Token {
   String toString() => '<not a token>';
 }
 
-class LineTerminator extends Token {
-  LineTerminator(super.line, super.column, super.file);
+class LineTerminatorToken extends Token {
+  LineTerminatorToken(super.line, super.column, super.file);
 
   @override
   String toString() => '<line terminator>';
 }
 
-class Identifier extends Token {
-  Identifier(super.line, super.column, super.file, this.name);
+class IdentifierToken extends Token {
+  IdentifierToken(
+    super.line,
+    super.column,
+    super.file,
+    this.name,
+    this.private,
+  );
 
   final String name;
+  final bool private;
+
+  IdentifierToken asPrivate() =>
+      IdentifierToken(line, column, file, name, true);
 
   @override
-  String toString() => 'identifier $name';
+  String toString() => '${private ? 'private ' : ''}identifier $name';
+}
+
+enum Punctuator {
+  leftBrace,
+  rightBrace,
+  leftParen,
+  rightParen,
+  leftSquare,
+  rightSquare,
+  colon,
+  semicolon,
+  comma,
+
+  period,
+  ellipsis,
+
+  less,
+  greater,
+  lessEquals,
+  greaterEquals,
+  leftShift,
+  rightShift,
+  rightShiftUnsigned,
+  leftShiftEquals,
+  rightShiftEquals,
+  rightShiftUnsignedEquals,
+
+  equals,
+  equalsEquals,
+  equalsEqualsEquals,
+  arrow,
+
+  bitwiseNot,
+  not,
+  notEquals,
+  notEqualsEquals,
+
+  and,
+  or,
+  logicalAnd,
+  logicalOr,
+  andEquals,
+  orEquals,
+  logicalAndEquals,
+  logicalOrEquals,
+
+  xor,
+  xorEquals,
+  div,
+  divEquals,
+  mod,
+  modEquals,
+
+  times,
+  pow,
+  timesEquals,
+  powEquals,
+  add,
+  subtract,
+  addOne,
+  subtractOne,
+  addEquals,
+  subtractEquals,
+
+  question,
+  questionQuestion,
+  questionQuestionEquals,
+  optionalChaining,
+}
+
+class PunctuatorToken extends Token {
+  PunctuatorToken(super.line, super.column, super.file, this.punctuator);
+
+  final Punctuator punctuator;
+}
+
+class NumberToken extends Token {
+  NumberToken(super.line, super.column, super.file, this.number);
+
+  final double number;
+}
+
+class BigIntToken extends Token {
+  BigIntToken(super.line, super.column, super.file, this.bigInt);
+
+  final BigInt bigInt;
 }
 
 enum InputElementType {
@@ -118,13 +214,50 @@ List<int> spaces = const [
 ];
 
 List<int> lineTerminators = [0xa, 0xd, 0x2028, 0x2029];
+Map<int, Punctuator> punctuators = {
+  0x21: .not,
+  0x25: .mod,
+  0x26: .and,
+  0x28: .leftParen,
+  0x29: .rightParen,
+  0x2a: .times,
+  0x2b: .add,
+  0x2c: .comma,
+  0x2d: .subtract,
+  0x2e: .period,
+  0x2f: .div,
+  0x3a: .colon,
+  0x3b: .semicolon,
+  0x3c: .less,
+  0x3d: .equals,
+  0x3e: .greater,
+  0x3f: .question,
+  0x5b: .leftSquare,
+  0x5d: .rightSquare,
+  0x5e: .xor,
+  0x7b: .leftBrace,
+  0x7c: .or,
+  0x7d: .rightBrace,
+  0x7e: .bitwiseNot,
+};
+Set<int> singlePunctuators = {
+  0x7b,
+  0x28,
+  0x29,
+  0x5b,
+  0x5d,
+  0x3a,
+  0x3b,
+  0x2c,
+  0x7e,
+};
 
 bool isIdentifierStart(int rune) {
-  return isIDContinue(rune) || rune == 0x24;
+  return isIDStart(rune) || rune == 0x24;
 }
 
 bool isIdentifierPart(int rune) {
-  return isIDStart(rune) || rune == 0x24 || rune == 0x5f;
+  return isIDContinue(rune) || rune == 0x24 || rune == 0x5f;
 }
 
 Token tokenize(
@@ -142,17 +275,21 @@ Token tokenize(
   int line = sourceText.line;
   int column = sourceText.column;
   String filename = sourceText.filename;
+  // WhiteSpace
   if (spaces.contains(rune)) {
     sourceText.consume();
     return NonToken(line, column, filename);
   }
+  // LineTerminator
   if (lineTerminators.contains(rune)) {
     sourceText.consume();
-    return LineTerminator(line, column, filename);
+    return LineTerminatorToken(line, column, filename);
   }
+  // Comment
   if (rune == 0x2f) {
     sourceText.save();
     sourceText.consume();
+    // SingleLineComment
     int? rune2 = sourceText.getRune();
     if (rune2 == 0x2f) {
       sourceText.stackDown();
@@ -165,6 +302,7 @@ Token tokenize(
       }
       return NonToken(line, column, filename);
     }
+    // MultiLineComment
     if (rune2 == 0x2a) {
       bool lineTerminator = false;
       bool asterisk = false;
@@ -191,7 +329,7 @@ Token tokenize(
       if (!eof) {
         sourceText.stackDown();
         if (lineTerminator) {
-          return LineTerminator(line, column, filename);
+          return LineTerminatorToken(line, column, filename);
         } else {
           return NonToken(line, column, filename);
         }
@@ -199,57 +337,396 @@ Token tokenize(
     }
     sourceText.restore();
   }
-  identifier:
-  if (isIdentifierStart(rune) || rune == 0x5c) {
-    StringBuffer buffer = StringBuffer();
-    if (rune == 0x5c) {
-      int? unicodeEscape = getUnicodeEscape(sourceText);
-      if (unicodeEscape == null) break identifier;
-      if (!isIdentifierStart(unicodeEscape)) {
-        errors.add(
-          SyntaxError(
-            'Invalid unicode escape to start identifier',
-            sourceText.line,
-            sourceText.column,
-            sourceText.filename,
-          ),
-        );
-      }
-      buffer.writeCharCode(unicodeEscape);
-    } else {
-      buffer.writeCharCode(rune);
-    }
-    sourceText.consume();
-    while (true) {
-      int? rune = sourceText.getRune();
-      if (rune == null) break;
-      if (isIdentifierPart(rune) || rune == 0x5c) {
-        if (rune == 0x5c) {
-          int? unicodeEscape = getUnicodeEscape(sourceText);
-          if (unicodeEscape == null) break;
-          if (!isIdentifierPart(unicodeEscape)) {
-            errors.add(
-              SyntaxError(
-                'Invalid unicode escape in identifier',
-                sourceText.line,
-                sourceText.column,
-                sourceText.filename,
-              ),
-            );
-          }
-          buffer.writeCharCode(unicodeEscape);
-        } else {
-          buffer.writeCharCode(rune);
-          sourceText.consume();
-        }
-      } else {
-        break;
-      }
-    }
-    return Identifier(line, column, sourceText.filename, buffer.toString());
+  // CommonToken
+  // IdentifierName
+  IdentifierToken? identifier = parseIdentifier(
+    sourceText,
+    errors,
+    line,
+    column,
+  );
+  if (identifier != null) {
+    return identifier;
   }
+  // PrivateIdentifier
+  if (rune == 0x23) {
+    sourceText.save();
+    sourceText.consume();
+    IdentifierToken? identifier = parseIdentifier(
+      sourceText,
+      errors,
+      line,
+      column,
+    );
+    if (identifier == null) {
+      sourceText.restore();
+    } else {
+      sourceText.stackDown();
+      return identifier.asPrivate();
+    }
+  }
+  // NumericLiteral (before Punctuator because of periods)
+  // DecimalBigIntegerLiteral
+  BigInt? bigIntegerLiteral = getDecimalBigIntegerLiteral(sourceText);
+  if (bigIntegerLiteral != null) {
+    return BigIntToken(line, column, filename, bigIntegerLiteral);
+  }
+  // DecimalLiteral
+  int? integerLiteral = getDecimalIntegerLiteral(sourceText, errors);
+  if (integerLiteral != null) {
+    if (sourceText.getRune() == 0x2e) {
+      sourceText.consume();
+      ({int value, int length})? decimalDigits = getDigitsWithLength(
+        sourceText,
+        true,
+        10,
+      );
+      int? exponentPart = getExponentPart(sourceText, true);
+      return NumberToken(
+        line,
+        column,
+        filename,
+        (integerLiteral.toDouble() +
+                ((decimalDigits?.value ?? 0) *
+                    pow(10, -(decimalDigits?.length ?? 0)))) *
+            pow(10, exponentPart ?? 0),
+      );
+    }
+    int? exponentPart = getExponentPart(sourceText, true);
+    return NumberToken(
+      line,
+      column,
+      filename,
+      integerLiteral.toDouble() * pow(10, exponentPart ?? 0),
+    );
+  }
+  if (sourceText.getRune() == 0x2e) {
+    sourceText.save();
+    sourceText.consume();
+    ({int value, int length})? decimalDigits = getDigitsWithLength(
+      sourceText,
+      true,
+      10,
+    );
+    if (decimalDigits == null) {
+      sourceText.restore();
+    } else {
+      sourceText.stackDown();
+
+      int? exponentPart = getExponentPart(sourceText, true);
+      return NumberToken(
+        line,
+        column,
+        filename,
+        decimalDigits.value.toDouble() *
+            pow(10, -decimalDigits.value) *
+            pow(10, exponentPart ?? 0),
+      );
+    }
+  }
+  // NonDecimalIntegerLiteral
+  BigInt? nonDecimalIntegerLiteral = getNonDecimalIntegerLiteral(
+    sourceText,
+    errors,
+    true,
+  );
+  if (nonDecimalIntegerLiteral != null) {
+    if (sourceText.getRune() == 0x6e) {
+      sourceText.consume();
+      return BigIntToken(line, column, filename, nonDecimalIntegerLiteral);
+    } else {
+      return NumberToken(
+        line,
+        column,
+        filename,
+        nonDecimalIntegerLiteral.toDouble(),
+      );
+    }
+  }
+  if (rune == 0x30) {
+    sourceText.consume();
+    if (getDigit(sourceText, 10) != null) {
+      // in non-strict mode this is supposed to work fine, but it's legacy syntax so nobody should be relying on this
+      errors.add(
+        SyntaxError(
+          'You cannot have a zero before another number.',
+          line,
+          column,
+          filename,
+        ),
+      );
+    }
+    return NumberToken(line, column, filename, 0);
+  }
+  // Punctuator
+  if (singlePunctuators.contains(rune)) {
+    sourceText.consume();
+    return PunctuatorToken(line, column, filename, punctuators[rune]!);
+  }
+  if (rune == 0x2e) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x2e) {
+      sourceText.save();
+      sourceText.consume();
+      if (sourceText.getRune() == 0x2e) {
+        sourceText.consume();
+        sourceText.stackDown();
+        return PunctuatorToken(line, column, filename, .ellipsis);
+      }
+      sourceText.restore();
+    }
+    return PunctuatorToken(line, column, filename, .period);
+  }
+  if (rune == 0x25) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .modEquals);
+    }
+    return PunctuatorToken(line, column, filename, .mod);
+  }
+  if (rune == 0x3c) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .lessEquals);
+    }
+    if (sourceText.getRune() == 0x3c) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .leftShiftEquals);
+      }
+      return PunctuatorToken(line, column, filename, .leftShift);
+    }
+    return PunctuatorToken(line, column, filename, .less);
+  }
+  if (rune == 0x3e) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .greaterEquals);
+    }
+    if (sourceText.getRune() == 0x3e) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .rightShiftEquals);
+      }
+      if (sourceText.getRune() == 0x3e) {
+        sourceText.consume();
+        if (sourceText.getRune() == 0x3d) {
+          sourceText.consume();
+          return PunctuatorToken(
+            line,
+            column,
+            filename,
+            .rightShiftUnsignedEquals,
+          );
+        }
+        return PunctuatorToken(line, column, filename, .rightShiftUnsigned);
+      }
+      return PunctuatorToken(line, column, filename, .rightShift);
+    }
+    return PunctuatorToken(line, column, filename, .greater);
+  }
+  if (rune == 0x3d) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .equalsEqualsEquals);
+      }
+      return PunctuatorToken(line, column, filename, .equalsEquals);
+    }
+    if (sourceText.getRune() == 0x3e) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .arrow);
+    }
+    return PunctuatorToken(line, column, filename, .equals);
+  }
+  if (rune == 0x21) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .notEqualsEquals);
+      }
+      return PunctuatorToken(line, column, filename, .notEquals);
+    }
+    return PunctuatorToken(line, column, filename, .not);
+  }
+  if (rune == 0x2b) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x2b) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .addOne);
+    }
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .addEquals);
+    }
+    return PunctuatorToken(line, column, filename, .add);
+  }
+  if (rune == 0x2d) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x2d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .subtractOne);
+    }
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .subtractEquals);
+    }
+    return PunctuatorToken(line, column, filename, .subtract);
+  }
+  if (rune == 0x2a) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x2a) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .powEquals);
+      }
+      return PunctuatorToken(line, column, filename, .pow);
+    }
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .timesEquals);
+    }
+    return PunctuatorToken(line, column, filename, .times);
+  }
+  if (rune == 0x26) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x26) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .logicalAndEquals);
+      }
+      return PunctuatorToken(line, column, filename, .logicalAnd);
+    }
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .andEquals);
+    }
+    return PunctuatorToken(line, column, filename, .and);
+  }
+  if (rune == 0x7c) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x7c) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .logicalOrEquals);
+      }
+      return PunctuatorToken(line, column, filename, .logicalOr);
+    }
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .orEquals);
+    }
+    return PunctuatorToken(line, column, filename, .or);
+  }
+  if (rune == 0x5e) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x3d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .xorEquals);
+    }
+    return PunctuatorToken(line, column, filename, .xor);
+  }
+  if (rune == 0x3f) {
+    sourceText.consume();
+    if (sourceText.getRune() == 0x2e) {
+      sourceText.save();
+      sourceText.consume();
+      int? digit = getDigit(sourceText, 10);
+      if (digit == null) {
+        sourceText.stackDown();
+        return PunctuatorToken(line, column, filename, .optionalChaining);
+      }
+      sourceText.restore();
+    }
+    if (sourceText.getRune() == 0x3f) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .questionQuestionEquals);
+      }
+      return PunctuatorToken(line, column, filename, .questionQuestion);
+    }
+    return PunctuatorToken(line, column, filename, .question);
+  }
+  // TODO: stringliteral, template, plus all the inputelementtype-specific tokens
   throw UnimplementedError(
     'no rules matched token U+${rune.toRadixString(16).padLeft(4, '0')}',
+  );
+}
+
+IdentifierToken? parseIdentifier(
+  SourceTextIterator sourceText,
+  List<SyntaxError> errors,
+  int line,
+  int column,
+) {
+  StringBuffer buffer = StringBuffer();
+  int? rune = sourceText.getRune();
+  if (rune == null) return null;
+  if (rune == 0x5c) {
+    int? unicodeEscape = getUnicodeEscape(sourceText);
+    if (unicodeEscape == null) return null;
+    if (!isIdentifierStart(unicodeEscape)) {
+      errors.add(
+        SyntaxError(
+          'Invalid unicode escape to start identifier',
+          sourceText.line,
+          sourceText.column,
+          sourceText.filename,
+        ),
+      );
+    }
+    buffer.writeCharCode(unicodeEscape);
+  } else if (isIdentifierStart(rune)) {
+    buffer.writeCharCode(rune);
+  } else {
+    return null;
+  }
+  sourceText.consume();
+  while (true) {
+    int? rune = sourceText.getRune();
+    if (rune == null) break;
+    if (isIdentifierPart(rune) || rune == 0x5c) {
+      if (rune == 0x5c) {
+        int? unicodeEscape = getUnicodeEscape(sourceText);
+        if (unicodeEscape == null) break;
+        if (!isIdentifierPart(unicodeEscape)) {
+          errors.add(
+            SyntaxError(
+              'Invalid unicode escape in identifier',
+              sourceText.line,
+              sourceText.column,
+              sourceText.filename,
+            ),
+          );
+        }
+        buffer.writeCharCode(unicodeEscape);
+      } else {
+        buffer.writeCharCode(rune);
+        sourceText.consume();
+      }
+    } else {
+      break;
+    }
+  }
+  return IdentifierToken(
+    line,
+    column,
+    sourceText.filename,
+    buffer.toString(),
+    false,
   );
 }
 
@@ -281,7 +758,7 @@ int? getUnicodeEscape(SourceTextIterator sourceText) {
       return null;
     }
     sourceText.consume();
-    int? hexDigits = getHexDigits(sourceText, false);
+    int? hexDigits = getDigitsWithLength(sourceText, false, 16)?.value;
     if (hexDigits == null ||
         hexDigits > 0x10fff ||
         sourceText.getRune() != 0x7d) {
@@ -289,6 +766,7 @@ int? getUnicodeEscape(SourceTextIterator sourceText) {
       return null;
     }
     sourceText.consume();
+    sourceText.stackDown();
     return hexDigits;
   }
   int? hex2 = getHexDigit(sourceText);
@@ -298,6 +776,7 @@ int? getUnicodeEscape(SourceTextIterator sourceText) {
     sourceText.restore();
     return null;
   }
+  sourceText.stackDown();
   return hex1 * 0x1000 + hex2 * 0x100 + hex3 * 0x10 + hex4;
 }
 
@@ -319,21 +798,233 @@ int? getHexDigit(SourceTextIterator sourceText) {
   return null;
 }
 
-int? getHexDigits(SourceTextIterator sourceText, bool separator) {
-  int? digit1 = getHexDigit(sourceText);
+/// radix <= 10
+int? getNonHexDigit(SourceTextIterator sourceText, int radix) {
+  int? rune = sourceText.getRune();
+  if (rune == null) return null;
+  if (rune >= 0x30 && rune < 0x30 + radix) {
+    sourceText.consume();
+    return rune - 0x30;
+  }
+  return null;
+}
+
+int? getDigit(SourceTextIterator sourceText, int radix) {
+  if (radix <= 10) {
+    return getNonHexDigit(sourceText, radix);
+  } else {
+    assert(radix == 16);
+    return getHexDigit(sourceText);
+  }
+}
+
+({int value, int length})? getDigitsWithLength(
+  SourceTextIterator sourceText,
+  bool separator,
+  int radix,
+) {
+  int? digit1 = getDigit(sourceText, radix);
   if (digit1 == null) return null;
   int buffer = digit1;
+  int length = 1;
   while (true) {
-    int? digit = getHexDigit(sourceText);
+    int? digit = getDigit(sourceText, radix);
     if (digit == null) {
       if (!separator || sourceText.getRune() != 0x5f) {
         break;
       }
       sourceText.consume();
     } else {
-      buffer *= 0x10;
+      buffer *= radix;
       buffer += digit;
+      length += 1;
     }
   }
-  return buffer;
+  return (value: buffer, length: length);
+}
+
+({BigInt value, int length})? getBigIntDigitsWithLength(
+  SourceTextIterator sourceText,
+  bool separator,
+  int radix,
+) {
+  int? digit1 = getDigit(sourceText, radix);
+  if (digit1 == null) return null;
+  BigInt buffer = BigInt.from(digit1);
+  int length = 1;
+  while (true) {
+    int? digit = getDigit(sourceText, radix);
+    if (digit == null) {
+      if (!separator || sourceText.getRune() != 0x5f) {
+        break;
+      }
+      sourceText.consume();
+    } else {
+      buffer *= BigInt.from(radix);
+      buffer += BigInt.from(digit);
+      length++;
+    }
+  }
+  return (value: buffer, length: length);
+}
+
+int? getSignedInteger(SourceTextIterator sourceText, bool separator) {
+  int? rune = sourceText.getRune();
+  bool negated = false;
+  sourceText.save();
+  if (rune == 0x2b) {
+    sourceText.consume();
+  } else if (rune == 0x2d) {
+    negated = true;
+    sourceText.consume();
+  }
+  int? signedInteger = getDigitsWithLength(sourceText, separator, 10)?.value;
+  if (signedInteger == null) {
+    sourceText.restore();
+    return null;
+  }
+  sourceText.stackDown();
+  return signedInteger * (negated ? -1 : 1);
+}
+
+int? getExponentPart(SourceTextIterator sourceText, bool separator) {
+  int? rune = sourceText.getRune();
+  if (rune != 0x45 && rune != 0x65) {
+    return null;
+  }
+  sourceText.save();
+  sourceText.consume();
+  int? signedInteger = getSignedInteger(sourceText, separator);
+  if (signedInteger == null) {
+    sourceText.restore();
+  } else {
+    sourceText.stackDown();
+  }
+  return signedInteger;
+}
+
+BigInt? getDecimalBigIntegerLiteral(SourceTextIterator sourceText) {
+  int? rune = sourceText.getRune();
+  if (rune == null) {
+    return null;
+  }
+  sourceText.save();
+  if (rune == 0x30) {
+    sourceText.consume();
+    int? rune2 = sourceText.getRune();
+    if (rune2 != 0x6e) {
+      sourceText.restore();
+      return null;
+    }
+    sourceText.stackDown();
+    sourceText.consume();
+    return BigInt.from(0);
+  } else if (rune >= 0x30 && rune <= 0x39) {
+    int digit1 = rune - 0x30;
+    sourceText.consume();
+    int? rune2 = sourceText.getRune();
+    if (rune2 == 0x5f) {
+      sourceText.consume();
+    }
+    ({BigInt value, int length})? otherDigits = getBigIntDigitsWithLength(
+      sourceText,
+      true,
+      10,
+    );
+    if (otherDigits == null) {
+      if (rune2 == 0x5f) {
+        sourceText.restore();
+        return null;
+      }
+      int? rune3 = sourceText.getRune();
+      if (rune3 != 0x6e) {
+        sourceText.restore();
+        return null;
+      }
+      sourceText.stackDown();
+      sourceText.consume();
+      return BigInt.from(digit1);
+    }
+    int? rune3 = sourceText.getRune();
+    if (rune3 != 0x6e) {
+      sourceText.restore();
+      return null;
+    }
+    sourceText.stackDown();
+    sourceText.consume();
+    return BigInt.from(digit1) * BigInt.from(10).pow(otherDigits.length) +
+        otherDigits.value;
+  } else {
+    sourceText.restore();
+    return null;
+  }
+}
+
+int? getDecimalIntegerLiteral(
+  SourceTextIterator sourceText,
+  List<SyntaxError> errors,
+) {
+  int? rune = sourceText.getRune();
+  if (rune == null) {
+    return null;
+  }
+  if (rune > 0x30 && rune <= 0x39) {
+    int digit1 = rune - 0x30;
+    sourceText.consume();
+    int? rune2 = sourceText.getRune();
+    if (rune2 == 0x5f) {
+      sourceText.consume();
+    }
+    ({BigInt value, int length})? otherDigits = getBigIntDigitsWithLength(
+      sourceText,
+      true,
+      10,
+    );
+    if (otherDigits == null) {
+      return digit1;
+    }
+    return digit1 * pow(10, otherDigits.length).toInt() +
+        otherDigits.value.toInt();
+  } else {
+    return null;
+  }
+}
+
+/// not necessarily a bigint, if there's no n at the end convert it to a regular int
+BigInt? getNonDecimalIntegerLiteral(
+  SourceTextIterator sourceText,
+  List<SyntaxError> errors,
+  bool separator,
+) {
+  if (sourceText.getRune() != 0x30) return null;
+  sourceText.save();
+  sourceText.consume();
+  int radix;
+  switch (sourceText.getRune()) {
+    case 0x42:
+    case 0x62:
+      radix = 2;
+    case 0x4f:
+    case 0x6f:
+      radix = 8;
+    case 0x58:
+    case 0x78:
+      radix = 16;
+    default:
+      sourceText.restore();
+      return null;
+  }
+  sourceText.consume();
+  BigInt? digits = getBigIntDigitsWithLength(
+    sourceText,
+    separator,
+    radix,
+  )?.value;
+  if (digits == null) {
+    sourceText.restore();
+    return null;
+  } else {
+    sourceText.stackDown();
+    return digits;
+  }
 }
