@@ -129,6 +129,12 @@ class BigIntToken extends Token {
   final BigInt bigInt;
 }
 
+class StringToken extends Token {
+  StringToken(super.line, super.column, super.file, this.string);
+
+  final String string;
+}
+
 enum InputElementType {
   hashbangOrRegExp, // start of Script or Module
   regExpOrTemplateTail, // a RegularExpressionLiteral, a TemplateMiddle, or a TemplateTail is permitted
@@ -250,6 +256,15 @@ Set<int> singlePunctuators = {
   0x3b,
   0x2c,
   0x7e,
+};
+
+Map<int, int> escapeCharacters = {
+  0x62: 0x08,
+  0x66: 0x0c,
+  0x6e: 0x0a,
+  0x72: 0x0d,
+  0x74: 0x09,
+  0x76: 0x0b,
 };
 
 bool isIdentifierStart(int rune) {
@@ -450,9 +465,9 @@ Token tokenize(
       errors.add(
         SyntaxError(
           'You cannot have a zero before another number.',
-          line,
-          column,
-          filename,
+          sourceText.line,
+          sourceText.column,
+          sourceText.filename,
         ),
       );
     }
@@ -660,7 +675,106 @@ Token tokenize(
     }
     return PunctuatorToken(line, column, filename, .question);
   }
-  // TODO: stringliteral, template, plus all the inputelementtype-specific tokens
+  // StringLiteral
+  if (rune == 0x22 || rune == 0x27) {
+    sourceText.consume();
+    StringBuffer buffer = StringBuffer();
+    while (true) {
+      int? newRune = sourceText.getRune();
+      if (newRune == null) {
+        errors.add(
+          SyntaxError(
+            'EOF inside string',
+            sourceText.line,
+            sourceText.column,
+            sourceText.filename,
+          ),
+        );
+        return StringToken(line, column, filename, buffer.toString());
+      }
+      if (newRune == 0xa || newRune == 0xd) {
+        errors.add(
+          SyntaxError(
+            'line termintator inside string',
+            sourceText.line,
+            sourceText.column,
+            sourceText.filename,
+          ),
+        );
+        return StringToken(line, column, filename, buffer.toString());
+      }
+      if (newRune == 0x5c) {
+        sourceText.consume();
+        newRune = sourceText.getRune();
+        if (newRune == null) {
+          errors.add(
+            SyntaxError(
+              'EOF inside string (during escape sequence)',
+              sourceText.line,
+              sourceText.column,
+              sourceText.filename,
+            ),
+          );
+          return StringToken(line, column, filename, buffer.toString());
+        }
+        if (newRune == 0xa || newRune == 0xd) {
+          errors.add(
+            SyntaxError(
+              'line terminator inside string (during escape sequence)',
+              sourceText.line,
+              sourceText.column,
+              sourceText.filename,
+            ),
+          );
+          return StringToken(line, column, filename, buffer.toString());
+        }
+        if (getDigit(sourceText, 10) != null) {
+          // in non-strict mode this is supposed to work fine, but it's legacy syntax so nobody should be relying on this
+          errors.add(
+            SyntaxError(
+              'You cannot have a number at the start of an escape sequence.',
+              sourceText.line,
+              sourceText.column,
+              sourceText.filename,
+            ),
+          );
+        }
+        if (escapeCharacters.containsKey(newRune)) {
+          sourceText.consume();
+          buffer.writeCharCode(escapeCharacters[newRune]!);
+          continue;
+        }
+        if (newRune == 0x78) {
+          sourceText.save();
+          sourceText.consume();
+          int? digit1 = getHexDigit(sourceText);
+          int? digit2 = getHexDigit(sourceText);
+          if (digit2 != null) {
+            sourceText.stackDown();
+            buffer.writeCharCode(digit1! * 16 + digit2);
+            continue;
+          } else {
+            sourceText.restore();
+          }
+        }
+        int? unicodeEscape = getUnicodeEscape(sourceText);
+        if (unicodeEscape != null) {
+          buffer.writeCharCode(unicodeEscape);
+          continue;
+        }
+        sourceText.consume();
+        buffer.writeCharCode(newRune);
+        continue;
+      }
+      if (newRune == rune) {
+        sourceText.consume();
+        return StringToken(line, column, filename, buffer.toString());
+      }
+      sourceText.consume();
+      buffer.writeCharCode(newRune);
+    }
+  }
+  // TODO: template, plus all the inputelementtype-specific tokens
   throw UnimplementedError(
     'no rules matched token U+${rune.toRadixString(16).padLeft(4, '0')}',
   );
@@ -676,8 +790,14 @@ IdentifierToken? parseIdentifier(
   int? rune = sourceText.getRune();
   if (rune == null) return null;
   if (rune == 0x5c) {
+    sourceText.save();
+    sourceText.consume();
     int? unicodeEscape = getUnicodeEscape(sourceText);
-    if (unicodeEscape == null) return null;
+    if (unicodeEscape == null) {
+      sourceText.restore();
+      return null;
+    }
+    sourceText.stackDown();
     if (!isIdentifierStart(unicodeEscape)) {
       errors.add(
         SyntaxError(
@@ -700,8 +820,14 @@ IdentifierToken? parseIdentifier(
     if (rune == null) break;
     if (isIdentifierPart(rune) || rune == 0x5c) {
       if (rune == 0x5c) {
+        sourceText.save();
+        sourceText.consume();
         int? unicodeEscape = getUnicodeEscape(sourceText);
-        if (unicodeEscape == null) break;
+        if (unicodeEscape == null) {
+          sourceText.restore();
+          break;
+        }
+        sourceText.stackDown();
         if (!isIdentifierPart(unicodeEscape)) {
           errors.add(
             SyntaxError(
@@ -731,7 +857,6 @@ IdentifierToken? parseIdentifier(
 }
 
 class SyntaxError {
-  // TODO: i think this should be a js-style object
   final String error;
   final int line;
   final int column;
@@ -744,7 +869,6 @@ class SyntaxError {
 
 int? getUnicodeEscape(SourceTextIterator sourceText) {
   sourceText.save();
-  sourceText.consume();
   if (sourceText.getRune() != 0x75) {
     sourceText.restore();
     return null;

@@ -205,6 +205,18 @@ void main() {
 
     expect(errors, isEmpty);
   });
+  test('strings', () {
+    SourceTextIterator file = SourceTextIterator(
+      'test',
+      '"cat\'s"\'"dog"\\u000a\\x0a\\u{2028}\\a\\t\'',
+    );
+    List<SyntaxError> errors = [];
+    expectString(tokenize(file, InputElementType.div, errors), 'cat\'s');
+    // ignore: unnecessary_string_escapes
+    expectString(tokenize(file, InputElementType.div, errors), '"dog"\u000a\x0a\u{2028}\a\t');
+
+    expect(errors, isEmpty);
+  });
 }
 
 void expectIdentifier(Token token, bool shouldBePrivate, String expectedName) {
@@ -221,6 +233,11 @@ void expectPunctuator(Token token, Punctuator expectedPunctuator) {
 void expectNumber(Token token, double expectedNumber) {
   expect(token, isA<NumberToken>());
   expect((token as NumberToken).number, expectedNumber);
+}
+
+void expectString(Token token, String expectedString) {
+  expect(token, isA<StringToken>());
+  expect((token as StringToken).string, expectedString);
 }
 
 void expectBigInt(Token token, BigInt expectedBigInt) {
