@@ -717,16 +717,16 @@ Token tokenize(
           );
           return StringToken(line, column, filename, buffer.toString());
         }
-        if (newRune == 0xa || newRune == 0xd) {
-          errors.add(
-            SyntaxError(
-              'line terminator inside string (during escape sequence)',
-              sourceText.line,
-              sourceText.column,
-              sourceText.filename,
-            ),
-          );
-          return StringToken(line, column, filename, buffer.toString());
+        if (newRune == 0xa  || newRune == 0x2028 || newRune == 0x2029) {
+          sourceText.consume();
+          continue;
+        }
+        if (newRune == 0xd) {
+          sourceText.consume();
+          if (sourceText.getRune() == 0xa) {
+            sourceText.consume();
+          }
+          continue;
         }
         if (getDigit(sourceText, 10) != null) {
           // in non-strict mode this is supposed to work fine, but it's legacy syntax so nobody should be relying on this

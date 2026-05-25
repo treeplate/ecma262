@@ -208,12 +208,12 @@ void main() {
   test('strings', () {
     SourceTextIterator file = SourceTextIterator(
       'test',
-      '"cat\'s"\'"dog"\\u000a\\x0a\\u{2028}\\a\\t\'',
+      '"cat\'s"\'"dog"\\u000a\\x0a\\u{2028}\\a\\t\\\u{2028}\\\n\\\r\n\\\r\\\u{2029}l2\'',
     );
     List<SyntaxError> errors = [];
     expectString(tokenize(file, InputElementType.div, errors), 'cat\'s');
     // ignore: unnecessary_string_escapes
-    expectString(tokenize(file, InputElementType.div, errors), '"dog"\u000a\x0a\u{2028}\a\t');
+    expectString(tokenize(file, InputElementType.div, errors), '"dog"\u000a\x0a\u{2028}\a\tl2');
 
     expect(errors, isEmpty);
   });
