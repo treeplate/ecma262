@@ -217,6 +217,22 @@ void main() {
 
     expect(errors, isEmpty);
   });
+  test('div, right brace, hashbang', () {
+    SourceTextIterator file = SourceTextIterator(
+      'test',
+      '#! hashbang comment!\n/}}/=/',
+    );
+    List<SyntaxError> errors = [];
+    expect(tokenize(file, InputElementType.hashbangOrRegExp, errors), isA<NonToken>());
+    expect(tokenize(file, InputElementType.div, errors), isA<LineTerminatorToken>());
+    expectPunctuator(tokenize(file, InputElementType.div, errors), .div);
+    expectPunctuator(tokenize(file, InputElementType.div, errors), .rightBrace);
+    expectPunctuator(tokenize(file, InputElementType.regExp, errors), .rightBrace);
+    expectPunctuator(tokenize(file, InputElementType.templateTail, errors), .divEquals);
+    expectPunctuator(tokenize(file, InputElementType.templateTail, errors), .div);
+
+    expect(errors, isEmpty);
+  });
 }
 
 void expectIdentifier(Token token, bool shouldBePrivate, String expectedName) {

@@ -115,24 +115,36 @@ class PunctuatorToken extends Token {
   PunctuatorToken(super.line, super.column, super.file, this.punctuator);
 
   final Punctuator punctuator;
+
+  @override
+  String toString() => '$punctuator';
 }
 
 class NumberToken extends Token {
   NumberToken(super.line, super.column, super.file, this.number);
 
   final double number;
+
+  @override
+  String toString() => 'Number:$number';
 }
 
 class BigIntToken extends Token {
   BigIntToken(super.line, super.column, super.file, this.bigInt);
 
   final BigInt bigInt;
+
+  @override
+  String toString() => 'BigInt:$bigInt';
 }
 
 class StringToken extends Token {
   StringToken(super.line, super.column, super.file, this.string);
 
   final String string;
+
+  @override
+  String toString() => '"$string"';
 }
 
 enum InputElementType {
@@ -308,6 +320,7 @@ Token tokenize(
     int? rune2 = sourceText.getRune();
     if (rune2 == 0x2f) {
       sourceText.stackDown();
+      sourceText.consume();
       while (true) {
         int? rune3 = sourceText.getRune();
         if (rune3 == null || lineTerminators.contains(rune3)) {
@@ -717,7 +730,7 @@ Token tokenize(
           );
           return StringToken(line, column, filename, buffer.toString());
         }
-        if (newRune == 0xa  || newRune == 0x2028 || newRune == 0x2029) {
+        if (newRune == 0xa || newRune == 0x2028 || newRune == 0x2029) {
           sourceText.consume();
           continue;
         }
@@ -774,7 +787,54 @@ Token tokenize(
       buffer.writeCharCode(newRune);
     }
   }
-  // TODO: template, plus all the inputelementtype-specific tokens
+  // TODO: template
+  if (inputElementType == .div || inputElementType == .templateTail) {
+    // DivPunctuator
+    if (rune == 0x2f) {
+      sourceText.consume();
+      if (sourceText.getRune() == 0x3d) {
+        sourceText.consume();
+        return PunctuatorToken(line, column, filename, .divEquals);
+      }
+      return PunctuatorToken(line, column, filename, .div);
+    }
+  }
+  if (inputElementType == .div || inputElementType == .regExp) {
+    // RightBracePunctuator
+    if (rune == 0x7d) {
+      sourceText.consume();
+      return PunctuatorToken(line, column, filename, .rightBrace);
+    }
+  }
+  if (inputElementType == .regExp ||
+      inputElementType == .regExpOrTemplateTail ||
+      inputElementType == .hashbangOrRegExp) {
+    // TODO: reg exp
+  }
+  if (inputElementType == .regExpOrTemplateTail ||
+      inputElementType == .templateTail) {
+    // TODO: template substitution tail
+  }
+  if (inputElementType == .hashbangOrRegExp) {
+    // HashbangComment
+    if (rune == 0x23) {
+      sourceText.save();
+      sourceText.consume();
+      if (sourceText.getRune() == 0x21) {
+        sourceText.stackDown();
+        sourceText.consume();
+        while (true) {
+          int? rune3 = sourceText.getRune();
+          if (rune3 == null || lineTerminators.contains(rune3)) {
+            break;
+          }
+          sourceText.consume();
+        }
+        return NonToken(line, column, filename);
+      }
+      sourceText.restore();
+    }
+  }
   throw UnimplementedError(
     'no rules matched token U+${rune.toRadixString(16).padLeft(4, '0')}',
   );
