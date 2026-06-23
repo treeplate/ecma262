@@ -1,4 +1,4 @@
-import 'package:ecma262/ecma262.dart';
+import 'package:ecma262/lexer.dart';
 import 'package:test/test.dart';
 
 void main() {

@@ -741,6 +741,7 @@ Token tokenize(
           }
           continue;
         }
+        sourceText.save();
         if (getDigit(sourceText, 10) != null) {
           // in non-strict mode this is supposed to work fine, but it's legacy syntax so nobody should be relying on this
           errors.add(
@@ -752,6 +753,7 @@ Token tokenize(
             ),
           );
         }
+        sourceText.restore();
         if (escapeCharacters.containsKey(newRune)) {
           sourceText.consume();
           buffer.writeCharCode(escapeCharacters[newRune]!);
@@ -836,7 +838,7 @@ Token tokenize(
     }
   }
   throw UnimplementedError(
-    'no rules matched token U+${rune.toRadixString(16).padLeft(4, '0')}',
+    'no implemented rules matched token U+${rune.toRadixString(16).padLeft(4, '0')}',
   );
 }
 
