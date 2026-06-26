@@ -208,7 +208,7 @@ class SourceTextIterator {
     : _string = string.runes.toList();
 }
 
-List<int> spaces = const [
+Set<int> spaces = const {
   0x9,
   0xb,
   0xc,
@@ -230,7 +230,7 @@ List<int> spaces = const [
   0x205f,
   0x3000,
   0xfeff,
-];
+};
 
 List<int> lineTerminators = [0xa, 0xd, 0x2028, 0x2029];
 Map<int, Punctuator> punctuators = {

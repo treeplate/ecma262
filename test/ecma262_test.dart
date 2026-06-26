@@ -283,6 +283,15 @@ void main() {
 
       expect(errors, isEmpty);
     });
+    test('0.5', () {
+      SourceTextIterator file = SourceTextIterator(
+        'test',
+        '0.5',
+      );
+      List<SyntaxError> errors = [];
+      expectNumber(tokenize(file, InputElementType.div, errors), 0.5);
+      expect(errors, isEmpty);
+    });
     test('strings', () {
       SourceTextIterator file = SourceTextIterator(
         'test',

@@ -152,6 +152,7 @@ List<StatementListItem> parseStatementList(
   // but everywhere that uses it has it as optional, so it's as if it could be empty
 
   List<StatementListItem> list = [];
+  // TODO: what if this isn't the outer statementlist but one inside a block
   while (!tokens.isDone) {
     list.add(
       parseStatementListItem(
