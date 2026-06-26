@@ -1004,6 +1004,7 @@ int? getDigit(SourceTextIterator sourceText, int radix) {
   }
 }
 
+// TODO: consider if the value should be a double or a BigInt to handle big numbers
 ({int value, int length})? getDigitsWithLength(
   SourceTextIterator sourceText,
   bool separator,
