@@ -201,6 +201,7 @@ class SourceTextIterator {
   int get line => _stack[_stackIndex].line;
   int get column => _stack[_stackIndex].column;
 
+  bool get atStart => _stack[_stackIndex].index == 0;
   bool get isDone => _stack[_stackIndex].index == _string.length;
 
   SourceTextIterator(this.filename, String string)
