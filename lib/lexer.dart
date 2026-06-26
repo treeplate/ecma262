@@ -398,6 +398,7 @@ Token tokenize(
   // DecimalBigIntegerLiteral
   BigInt? bigIntegerLiteral = getDecimalBigIntegerLiteral(sourceText);
   if (bigIntegerLiteral != null) {
+    checkEndOfNumber(sourceText, errors, line, column, filename);
     return BigIntToken(line, column, filename, bigIntegerLiteral);
   }
   // DecimalLiteral
@@ -411,6 +412,7 @@ Token tokenize(
         10,
       );
       int? exponentPart = getExponentPart(sourceText, true);
+      checkEndOfNumber(sourceText, errors, line, column, filename);
       return NumberToken(
         line,
         column,
@@ -422,6 +424,7 @@ Token tokenize(
       );
     }
     int? exponentPart = getExponentPart(sourceText, true);
+    checkEndOfNumber(sourceText, errors, line, column, filename);
     return NumberToken(
       line,
       column,
@@ -443,6 +446,7 @@ Token tokenize(
       sourceText.stackDown();
 
       int? exponentPart = getExponentPart(sourceText, true);
+      checkEndOfNumber(sourceText, errors, line, column, filename);
       return NumberToken(
         line,
         column,
@@ -462,8 +466,10 @@ Token tokenize(
   if (nonDecimalIntegerLiteral != null) {
     if (sourceText.getRune() == 0x6e) {
       sourceText.consume();
+      checkEndOfNumber(sourceText, errors, line, column, filename);
       return BigIntToken(line, column, filename, nonDecimalIntegerLiteral);
     } else {
+      checkEndOfNumber(sourceText, errors, line, column, filename);
       return NumberToken(
         line,
         column,
@@ -485,6 +491,7 @@ Token tokenize(
         ),
       );
     }
+    checkEndOfNumber(sourceText, errors, line, column, filename);
     return NumberToken(line, column, filename, 0);
   }
   // Punctuator
@@ -841,6 +848,27 @@ Token tokenize(
   throw UnimplementedError(
     'no implemented rules matched token U+${rune.toRadixString(16).padLeft(4, '0')}',
   );
+}
+
+void checkEndOfNumber(
+  SourceTextIterator sourceText,
+  List<SyntaxError> errors,
+  int line,
+  int column,
+  String filename,
+) {
+  if (!sourceText.isDone &&
+      (isIdentifierStart(sourceText.getRune()!) ||
+          sourceText.getRune()! >= 0x30 && sourceText.getRune()! <= 0x39)) {
+    errors.add(
+      SyntaxError(
+        'IdentifierStart or DecimalDigit following number',
+        line,
+        column,
+        filename,
+      ),
+    );
+  }
 }
 
 IdentifierToken? parseIdentifier(
