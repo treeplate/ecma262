@@ -447,7 +447,7 @@ Token tokenize(
         column,
         filename,
         decimalDigits.value.toDouble() *
-            pow(10, -decimalDigits.value) *
+            pow(10, -decimalDigits.length) *
             pow(10, exponentPart ?? 0),
       );
     }
@@ -708,7 +708,7 @@ Token tokenize(
       if (newRune == 0xa || newRune == 0xd) {
         errors.add(
           SyntaxError(
-            'line termintator inside string',
+            'line terminator inside string',
             sourceText.line,
             sourceText.column,
             sourceText.filename,
@@ -1146,6 +1146,7 @@ BigInt? getDecimalBigIntegerLiteral(SourceTextIterator sourceText) {
   }
 }
 
+// TODO: maybe this should be a double or a BigInt, because doubles can have larger than 64-bit integer components
 int? getDecimalIntegerLiteral(
   SourceTextIterator sourceText,
   List<SyntaxError> errors,
@@ -1176,6 +1177,7 @@ int? getDecimalIntegerLiteral(
   }
 }
 
+// TODO: consider if we should actually convert it to a regular int, see todo above
 /// not necessarily a bigint, if there's no n at the end convert it to a regular int
 BigInt? getNonDecimalIntegerLiteral(
   SourceTextIterator sourceText,
