@@ -857,6 +857,8 @@ void checkEndOfNumber(
   int column,
   String filename,
 ) {
+  // TODO: what about unicode escapes? the exact quote from the spec is:
+  // The SourceCharacter immediately following a NumericLiteral must not be an IdentifierStart or DecimalDigit.
   if (!sourceText.isDone &&
       (isIdentifierStart(sourceText.getRune()!) ||
           sourceText.getRune()! >= 0x30 && sourceText.getRune()! <= 0x39)) {
