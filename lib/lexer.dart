@@ -1045,18 +1045,26 @@ int? getDigit(SourceTextIterator sourceText, int radix) {
   if (digit1 == null) return null;
   int buffer = digit1;
   int length = 1;
+  bool lastCharWasSeparator = false;
   while (true) {
+    sourceText.save();
     int? digit = getDigit(sourceText, radix);
     if (digit == null) {
       if (!separator || sourceText.getRune() != 0x5f) {
+        if (lastCharWasSeparator) {
+          sourceText.restore();
+        }
         break;
       }
+      lastCharWasSeparator = true;
       sourceText.consume();
     } else {
+      lastCharWasSeparator = false;
       buffer *= radix;
       buffer += digit;
       length += 1;
     }
+    sourceText.stackDown();
   }
   return (value: buffer, length: length);
 }
@@ -1070,18 +1078,25 @@ int? getDigit(SourceTextIterator sourceText, int radix) {
   if (digit1 == null) return null;
   BigInt buffer = BigInt.from(digit1);
   int length = 1;
+  bool lastCharWasSeparator = false;
   while (true) {
     int? digit = getDigit(sourceText, radix);
     if (digit == null) {
       if (!separator || sourceText.getRune() != 0x5f) {
+        if (lastCharWasSeparator) {
+          sourceText.restore();
+        }
         break;
       }
+      lastCharWasSeparator = true;
       sourceText.consume();
     } else {
+      lastCharWasSeparator = false;
       buffer *= BigInt.from(radix);
       buffer += BigInt.from(digit);
       length++;
     }
+    sourceText.stackDown();
   }
   return (value: buffer, length: length);
 }

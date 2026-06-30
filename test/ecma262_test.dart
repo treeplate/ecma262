@@ -55,6 +55,7 @@ void main() {
       SourceTextIterator file = SourceTextIterator('test', '/*/*/');
       List<SyntaxError> errors = [];
       expect(tokenize(file, InputElementType.div, errors), isA<NonToken>());
+      expect(file.isDone, isTrue);
       expect(errors, isEmpty);
     });
     test('private identifiers', () {
