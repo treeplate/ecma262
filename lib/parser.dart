@@ -32,7 +32,7 @@ class TokenIterator {
     );
   }
 
-  // TODO: ASI
+  // ASI is not implemented here because ASI is dumb (and hard to implement)
   Token? getToken(bool regexp, bool templateTail, bool acceptNewlines) {
     while (!sourceText.isDone) {
       sourceText.save();

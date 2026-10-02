@@ -333,6 +333,7 @@ Token tokenize(
     }
     // MultiLineComment
     if (rune2 == 0x2a) {
+      sourceText.consume();
       bool lineTerminator = false;
       bool asterisk = false;
       bool eof = false;
@@ -401,6 +402,43 @@ Token tokenize(
     checkEndOfNumber(sourceText, errors, line, column, filename);
     return BigIntToken(line, column, filename, bigIntegerLiteral);
   }
+  // NonDecimalIntegerLiteral (before DecimalLiteral because of 0)
+  BigInt? nonDecimalIntegerLiteral = getNonDecimalIntegerLiteral(
+    sourceText,
+    errors,
+    true,
+  );
+  if (nonDecimalIntegerLiteral != null) {
+    if (sourceText.getRune() == 0x6e) {
+      sourceText.consume();
+      checkEndOfNumber(sourceText, errors, line, column, filename);
+      return BigIntToken(line, column, filename, nonDecimalIntegerLiteral);
+    } else {
+      checkEndOfNumber(sourceText, errors, line, column, filename);
+      return NumberToken(
+        line,
+        column,
+        filename,
+        nonDecimalIntegerLiteral.toDouble(),
+      );
+    }
+  }
+  if (rune == 0x30) {
+    sourceText.save();
+    sourceText.consume();
+    if (getDigit(sourceText, 10) != null) {
+      // in non-strict mode this is supposed to work fine, but it's legacy syntax so nobody should be relying on this
+      errors.add(
+        SyntaxError(
+          'You cannot have a zero before another number.',
+          sourceText.line,
+          sourceText.column,
+          sourceText.filename,
+        ),
+      );
+    }
+    sourceText.restore();
+  }
   // DecimalLiteral
   int? integerLiteral = getDecimalIntegerLiteral(sourceText, errors);
   if (integerLiteral != null) {
@@ -456,43 +494,6 @@ Token tokenize(
             pow(10, exponentPart ?? 0),
       );
     }
-  }
-  // NonDecimalIntegerLiteral
-  BigInt? nonDecimalIntegerLiteral = getNonDecimalIntegerLiteral(
-    sourceText,
-    errors,
-    true,
-  );
-  if (nonDecimalIntegerLiteral != null) {
-    if (sourceText.getRune() == 0x6e) {
-      sourceText.consume();
-      checkEndOfNumber(sourceText, errors, line, column, filename);
-      return BigIntToken(line, column, filename, nonDecimalIntegerLiteral);
-    } else {
-      checkEndOfNumber(sourceText, errors, line, column, filename);
-      return NumberToken(
-        line,
-        column,
-        filename,
-        nonDecimalIntegerLiteral.toDouble(),
-      );
-    }
-  }
-  if (rune == 0x30) {
-    sourceText.consume();
-    if (getDigit(sourceText, 10) != null) {
-      // in non-strict mode this is supposed to work fine, but it's legacy syntax so nobody should be relying on this
-      errors.add(
-        SyntaxError(
-          'You cannot have a zero before another number.',
-          sourceText.line,
-          sourceText.column,
-          sourceText.filename,
-        ),
-      );
-    }
-    checkEndOfNumber(sourceText, errors, line, column, filename);
-    return NumberToken(line, column, filename, 0);
   }
   // Punctuator
   if (singlePunctuators.contains(rune)) {
@@ -1201,6 +1202,10 @@ int? getDecimalIntegerLiteral(
   int? rune = sourceText.getRune();
   if (rune == null) {
     return null;
+  }
+  if (rune == 0x30) {
+    sourceText.consume();
+    return 0;
   }
   if (rune > 0x30 && rune <= 0x39) {
     int digit1 = rune - 0x30;
