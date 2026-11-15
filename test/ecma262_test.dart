@@ -303,9 +303,9 @@ void main() {
       );
       List<SyntaxError> errors = [];
       expectString(tokenize(file, InputElementType.div, errors), 'cat\'s');
-      // ignore: unnecessary_string_escapes
       expectString(
         tokenize(file, InputElementType.div, errors),
+        // ignore: unnecessary_string_escapes
         '"dog"\u000a\x0a\u{2028}\a\tl2',
       );
 
